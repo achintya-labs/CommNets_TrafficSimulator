@@ -91,7 +91,16 @@ class Visualizer:
         fps = 30
         interval = 1000 // fps
 
+        cache = {'epoch': -1, 'pos0': {}, 'pos1': {}}
+
         def update(frame):
+            if frame % 5 == 0 or frame == total_frames - 1:
+                progress = (frame + 1) / total_frames
+                bar_len = 40
+                filled = int(bar_len * progress)
+                bar = '=' * filled + '-' * (bar_len - filled)
+                print(f"\rRendering animation: [{bar}] {frame+1}/{total_frames} frames ({progress*100:.1f}%)", end="", flush=True)
+
             epoch_idx = frame // steps_per_epoch
             alpha = (frame % steps_per_epoch) / steps_per_epoch
             
@@ -106,16 +115,21 @@ class Visualizer:
             
             time_text.set_text(f"Epoch: {state0['epoch']} + {alpha:.1f}")
             
-            pos0_dict = {}
-            for v_data in state0['vehicles']:
-                pos, color = self._get_vehicle_pos_color(v_data)
-                pos0_dict[v_data['id']] = (pos, color, v_data)
-                
-            pos1_dict = {}
-            for v_data in state1['vehicles']:
-                pos, color = self._get_vehicle_pos_color(v_data)
-                pos1_dict[v_data['id']] = (pos, color, v_data)
-                
+            if cache['epoch'] != epoch_idx:
+                cache['epoch'] = epoch_idx
+                cache['pos0'] = {}
+                for v_data in state0['vehicles']:
+                    pos, color = self._get_vehicle_pos_color(v_data)
+                    cache['pos0'][v_data['id']] = (pos, color, v_data)
+                    
+                cache['pos1'] = {}
+                for v_data in state1['vehicles']:
+                    pos, color = self._get_vehicle_pos_color(v_data)
+                    cache['pos1'][v_data['id']] = (pos, color, v_data)
+                    
+            pos0_dict = cache['pos0']
+            pos1_dict = cache['pos1']
+            
             positions = []
             colors = []
             
@@ -166,4 +180,5 @@ class Visualizer:
             ani.save(output_file, writer='pillow', fps=fps)
             
         plt.close(fig)
+        print() # Newline after the progress bar finishes
         print(f"Animation saved to {output_file}")
