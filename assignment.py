@@ -84,9 +84,9 @@ def main():
     
     
     # 4. Add Traffic Sources
-    sim.add_source(TrafficSource('N0', 'N11', generator=BernoulliGenerator(0.4)))
-    sim.add_source(TrafficSource('N1', 'N9', generator=PoissonGenerator(0.4)))
-    sim.add_source(TrafficSource('N10', 'N2', generator=PoissonGenerator(0.4)))
+    sim.add_source(TrafficSource('N0', 'N11', generator=BernoulliGenerator(0.6)))
+    sim.add_source(TrafficSource('N1', 'N9', generator=PoissonGenerator(0.6)))
+    sim.add_source(TrafficSource('N10', 'N2', generator=PoissonGenerator(0.6)))
 
     # sim.add_source(TrafficSource('N1', 'N4', generator=BernoulliGenerator(0.1)))
     

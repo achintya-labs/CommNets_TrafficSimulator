@@ -7,12 +7,17 @@ class Visualizer:
         self.simulator = simulator
         self.node_positions = node_positions
         self.history = simulator.history
-        self.colors = plt.cm.get_cmap('tab10')
+        self.colors = plt.cm.get_cmap('hsv')
+        self.dest_colors = {}
 
     def _get_vehicle_color(self, destination):
-        # Hash destination to a color index 0-9
-        color_idx = hash(destination) % 10
-        return self.colors(color_idx)
+        # Deterministically map each destination to a unique color using golden ratio spacing in the HSV spectrum
+        if destination not in self.dest_colors:
+            self.dest_colors[destination] = len(self.dest_colors)
+        
+        # 0.618033988749895 is the conjugate of the golden ratio
+        h = (self.dest_colors[destination] * 0.618033988749895) % 1.0
+        return self.colors(h)
 
     def _get_road_coords(self, road_id):
         road = self.simulator.roads[road_id]
