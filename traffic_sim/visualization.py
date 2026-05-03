@@ -25,6 +25,30 @@ class Visualizer:
         x2, y2 = self.node_positions[road.dest_node]
         return np.array([x1, y1]), np.array([x2, y2])
 
+    def _get_vehicle_pos_color(self, v_data):
+        if 'road_id' in v_data:
+            p1, p2 = self._get_road_coords(v_data['road_id'])
+            progress = v_data['progress']
+            direction = p2 - p1
+            length = np.linalg.norm(direction)
+            if length > 0:
+                normal = np.array([-direction[1], direction[0]]) / length
+                offset = normal * 0.05
+            else:
+                offset = np.array([0, 0])
+            pos = p1 + (p2 - p1) * progress + offset
+            color = self._get_vehicle_color(v_data['destination'])
+            return pos, color
+        elif 'node_id' in v_data:
+            pos = self.node_positions[v_data['node_id']]
+            h = hash(str(v_data['id']) + "jitter")
+            jitter_x = ((h % 100) / 100.0) * 0.2 - 0.1
+            jitter_y = (((h // 100) % 100) / 100.0) * 0.2 - 0.1
+            pos = np.array(pos) + np.array([jitter_x, jitter_y])
+            color = self._get_vehicle_color(v_data['destination'])
+            return pos, color
+        return np.array([0, 0]), self._get_vehicle_color(v_data['destination'])
+
     def animate(self, output_file='simulation.gif'):
         fig, ax = plt.subplots(figsize=(10, 8))
         
@@ -62,45 +86,69 @@ class Visualizer:
             time_text.set_text('')
             return scatter, time_text
 
-        def update(frame_idx):
-            state = self.history[frame_idx]
-            time_text.set_text(f"Epoch: {state['epoch']}")
+        steps_per_epoch = 10
+        total_frames = max(1, (len(self.history) - 1) * steps_per_epoch)
+        fps = 30
+        interval = 1000 // fps
+
+        def update(frame):
+            epoch_idx = frame // steps_per_epoch
+            alpha = (frame % steps_per_epoch) / steps_per_epoch
             
-            if not state['vehicles']:
-                scatter.set_offsets(np.empty((0, 2)))
-                scatter.set_facecolors(np.empty((0, 4)))
-                scatter.set_edgecolors(np.empty((0, 4)))
-                return scatter, time_text
+            if epoch_idx >= len(self.history):
+                epoch_idx = len(self.history) - 1
+                alpha = 0.0
+                
+            next_idx = min(epoch_idx + 1, len(self.history) - 1)
+            
+            state0 = self.history[epoch_idx]
+            state1 = self.history[next_idx]
+            
+            time_text.set_text(f"Epoch: {state0['epoch']} + {alpha:.1f}")
+            
+            pos0_dict = {}
+            for v_data in state0['vehicles']:
+                pos, color = self._get_vehicle_pos_color(v_data)
+                pos0_dict[v_data['id']] = (pos, color, v_data)
+                
+            pos1_dict = {}
+            for v_data in state1['vehicles']:
+                pos, color = self._get_vehicle_pos_color(v_data)
+                pos1_dict[v_data['id']] = (pos, color, v_data)
                 
             positions = []
             colors = []
             
-            for v_data in state['vehicles']:
-                if 'road_id' in v_data:
-                    p1, p2 = self._get_road_coords(v_data['road_id'])
-                    # Linear interpolation based on progress
-                    progress = v_data['progress']
-                    
-                    # Add a slight offset to the right of the road direction so opposite lanes don't overlap perfectly
-                    direction = p2 - p1
-                    length = np.linalg.norm(direction)
-                    if length > 0:
-                        normal = np.array([-direction[1], direction[0]]) / length
-                        offset = normal * 0.05
-                    else:
-                        offset = np.array([0, 0])
-                        
-                    pos = p1 + (p2 - p1) * progress + offset
-                    positions.append(pos)
-                    colors.append(self._get_vehicle_color(v_data['destination']))
-                elif 'node_id' in v_data:
-                    # Vehicle waiting at a source node
-                    pos = self.node_positions[v_data['node_id']]
-                    # Add jitter to show multiple vehicles
-                    pos = np.array(pos) + np.random.uniform(-0.1, 0.1, 2)
-                    positions.append(pos)
-                    colors.append(self._get_vehicle_color(v_data['destination']))
+            all_vids = set(pos0_dict.keys()) | set(pos1_dict.keys())
             
+            for vid in all_vids:
+                if vid in pos0_dict and vid in pos1_dict:
+                    pos0, color, _ = pos0_dict[vid]
+                    pos1, _, _ = pos1_dict[vid]
+                    pos = pos0 * (1 - alpha) + pos1 * alpha
+                    positions.append(pos)
+                    colors.append(color)
+                elif vid in pos0_dict:
+                    # Vehicle reached sink
+                    pos0, color, v_data = pos0_dict[vid]
+                    sink_pos = self.node_positions[v_data['destination']]
+                    pos = pos0 * (1 - alpha) + np.array(sink_pos) * alpha
+                    positions.append(pos)
+                    colors.append(color)
+                elif vid in pos1_dict:
+                    # Vehicle just appeared
+                    pos1, color, v_data = pos1_dict[vid]
+                    source_pos = self.node_positions[v_data['source']]
+                    pos = np.array(source_pos) * (1 - alpha) + pos1 * alpha
+                    positions.append(pos)
+                    colors.append(color)
+            
+            if not positions:
+                scatter.set_offsets(np.empty((0, 2)))
+                scatter.set_facecolors(np.empty((0, 4)))
+                scatter.set_edgecolors(np.empty((0, 4)))
+                return scatter, time_text
+
             scatter.set_offsets(np.array(positions))
             
             color_array = np.array(colors)
@@ -109,13 +157,13 @@ class Visualizer:
             
             return scatter, time_text
 
-        ani = animation.FuncAnimation(fig, update, frames=len(self.history),
-                                      init_func=init, blit=True, interval=200)
+        ani = animation.FuncAnimation(fig, update, frames=total_frames,
+                                      init_func=init, blit=True, interval=interval)
         
         if output_file.endswith('.mp4'):
-            ani.save(output_file, writer='ffmpeg', fps=5)
+            ani.save(output_file, writer='ffmpeg', fps=fps)
         else:
-            ani.save(output_file, writer='pillow', fps=5)
+            ani.save(output_file, writer='pillow', fps=fps)
             
         plt.close(fig)
         print(f"Animation saved to {output_file}")
